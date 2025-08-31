@@ -3,14 +3,25 @@
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const { app, logger } = require('./src/app');
+const { startJobsRunner } = require("./src/workers/jobs-runner");
+
 
 dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/ai-content-saas';
+const WORKER_INTERVAL_MS = Number(process.env.JOBS_RUNNER_INTERVAL_MS || 1500);
 
 // start HTTP server
 const server = app.listen(PORT, () => logger.info(`API listening on :${PORT}`));
+
+// start background worker (in-process, Phase 3 stub)
+try {
+  logger.info(`[jobs-runner] starting (interval=${WORKER_INTERVAL_MS}ms)`);
+  startJobsRunner({ intervalMs: WORKER_INTERVAL_MS });
+} catch (err) {
+  logger.error(`jobs-runner failed to start: ${err?.message || err}`);
+}
 
 // connect Mongo (retry simple)
 let connecting = false;

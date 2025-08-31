@@ -13,6 +13,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ---- API v1 Routers (protected) ----
+const { requireAuth } = require('./middleware/auth');
+const aiRouter = require('./routes/ai');
+const { jobsRouter } = require('./routes/jobs');
+
+// versioned base path per architecture
+app.use('/api/v1', requireAuth, aiRouter);
+app.use('/api/v1', requireAuth, jobsRouter);
+
+
 // routes
 const authRoutes = require('./routes/auth');
 app.use('/api/v1/auth', authRoutes);
