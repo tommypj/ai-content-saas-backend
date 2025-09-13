@@ -7,8 +7,8 @@
 
 const express = require("express");
 const { z } = require("zod");
-const mongoose = require("mongoose");
-const { Schema } = mongoose;
+
+// Use the canonical Job model to avoid OverwriteModelError
 const Job = require("../models/Job");
 
 const jobsRouter = express.Router();
@@ -27,40 +27,7 @@ const JobStatus = {
   FAILED: "FAILED",
 };
 
-/**
- * Minimal JobModel data-access placeholder.
- * Replace with your real repository/ORM (e.g., Mongoose, Prisma).
- */
-const JobModel = {
-  /**
-   * @param {string} id
-   * @returns {Promise<null | {
-   *   id: string,
-   *   userId: string,
-   *   type: string,
-   *   status: keyof typeof JobStatus,
-   *   result?: unknown,
-   *   error?: unknown,
-   *   startedAt?: string | Date,
-   *   finishedAt?: string | Date,
-   * }>}
-   */
-  // eslint-disable-next-line no-unused-vars
-  async getById(id) {
-    const doc = await Job.findById(id).lean();
-    if (!doc) return null;
-    return {
-      id: String(doc._id),
-      userId: String(doc.userId),
-      type: doc.type,
-      status: doc.status,
-      // Optional fields per contract — only include if present in the DB.
-      ...(typeof doc.result !== "undefined" ? { result: doc.result } : {}),
-      ...(doc.error ? { error: doc.error } : {}),
-      // If you add explicit startedAt/finishedAt later, include them here.
-    };
-  },
-};
+// Removed JobModel abstraction - using Job model directly
 
 /**
  * GET /jobs/:id
@@ -77,21 +44,25 @@ jobsRouter.get("/jobs/:id", async (req, res, next) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const job = await JobModel.getById(parse.data);
-    if (!job || job.userId !== userId) {
+    const job = await Job.findById(parse.data).lean();
+    if (!job) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+
+    if (String(job.userId) !== userId) {
       return res.status(404).json({ error: "Job not found" });
     }
 
     const response = {
-      id: job.id,
-      userId: job.userId,
+      id: String(job._id),
+      userId: String(job.userId),
       type: job.type,
       status: job.status,
       // Optional contract fields — only include if present.
-      ...(job.startedAt ? { startedAt: job.startedAt } : {}),
-      ...(job.finishedAt ? { finishedAt: job.finishedAt } : {}),
+      ...(job.result !== undefined ? { result: job.result } : {}),
       ...(job.error ? { error: job.error } : {}),
-      ...(typeof job.result !== "undefined" ? { result: job.result } : {}),
+      ...(job.tokensUsed ? { tokensUsed: job.tokensUsed } : {}),
+      ...(job.model ? { model: job.model } : {}),
     };
 
     return res.status(200).json(response);
@@ -101,29 +72,3 @@ jobsRouter.get("/jobs/:id", async (req, res, next) => {
 });
 
 module.exports = { jobsRouter };
-
-// Aligns to 06-data-models.md Job collection fields. Status per 06-workflow.md.
-const JobSchema = new Schema(
-  {
-    userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    type: {
-      type: String,
-      enum: ["KEYWORDS", "ARTICLE", "SEO"],
-      required: true,
-    },
-    status: {
-      type: String,
-      enum: ["PENDING", "RUNNING", "SUCCEEDED", "FAILED"],
-      required: true,
-      default: "PENDING",
-    },
-    payload: { type: Schema.Types.Mixed },
-    result: { type: Schema.Types.Mixed },
-    error: { type: Schema.Types.Mixed },
-    tokensUsed: { type: Number, default: 0 },
-    attempt: { type: Number, default: 0 },
-  },
-  { timestamps: true }
-);
-
-module.exports = mongoose.model("Job", JobSchema);

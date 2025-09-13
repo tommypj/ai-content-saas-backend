@@ -8,6 +8,15 @@ const { startJobsRunner } = require("./src/workers/jobs-runner");
 
 dotenv.config();
 
+// Validate required environment variables
+const requiredEnvVars = ['JWT_SECRET', 'MONGODB_URI', 'GOOGLE_API_KEY'];
+const missing = requiredEnvVars.filter(key => !process.env[key]);
+if (missing.length > 0) {
+  console.error(`Missing required environment variables: ${missing.join(', ')}`);
+  console.error('Please check your .env file and ensure all required variables are set.');
+  process.exit(1);
+}
+
 const PORT = process.env.PORT || 5000;
 const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/ai-content-saas';
 const WORKER_INTERVAL_MS = Number(process.env.JOBS_RUNNER_INTERVAL_MS || 1500);

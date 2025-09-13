@@ -3,6 +3,10 @@
 const express = require('express');
 const cors = require('cors');
 const winston = require('winston');
+const { requireAuth } = require('./middleware/auth');
+const authRouter = require('./routes/auth');
+const aiRouter = require('./routes/ai');
+const { jobsRouter } = require('./routes/jobs');
 
 const logger = winston.createLogger({
   level: 'info',
@@ -10,22 +14,26 @@ const logger = winston.createLogger({
 });
 
 const app = express();
-app.use(cors());
+// Allow frontend at localhost:5173; add credentials if you use cookies
+app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 app.use(express.json());
 
-// ---- API v1 Routers (protected) ----
-const { requireAuth } = require('./middleware/auth');
-const aiRouter = require('./routes/ai');
-const { jobsRouter } = require('./routes/jobs');
+// ---- PUBLIC auth routes (no JWT) ----
+app.use('/api/v1/auth', authRouter);
 
-// versioned base path per architecture
+// ---- PUBLIC debug route (no JWT) ----
+app.get('/api/v1/debug', (req, res) => {
+  res.json({ 
+    message: 'Backend is running correctly',
+    timestamp: new Date().toISOString(),
+    routes: ['auth', 'ai', 'jobs'],
+    status: 'ok'
+  });
+});
+
+// ---- PROTECTED routes (require JWT) ----
 app.use('/api/v1', requireAuth, aiRouter);
 app.use('/api/v1', requireAuth, jobsRouter);
-
-
-// routes
-const authRoutes = require('./routes/auth');
-app.use('/api/v1/auth', authRoutes);
 
 // health
 app.get('/health', (_req, res) => res.json({ ok: true }));

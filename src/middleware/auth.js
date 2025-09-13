@@ -1,35 +1,53 @@
 'use strict';
-/**
- * JWT verification middleware for protected routes.
- * Usage: app.get('/api/v1/secure', requireAuth, handler)
- */
 
 const jwt = require('jsonwebtoken');
+const winston = require('winston');
 
+const logger = winston.createLogger({
+  level: 'info',
+  transports: [new winston.transports.Console({ format: winston.format.simple() })],
+});
+
+/**
+ * requireAuth — verifies "Authorization: Bearer <jwt>"
+ * On failure, returns 401 with a specific { reason } for easier debugging.
+ */
 function requireAuth(req, res, next) {
+  const header = req.headers.authorization || req.headers.Authorization;
+  if (!header || typeof header !== 'string') {
+    logger.warn('[auth] missing Authorization header');
+    res.set('Content-Type', 'application/json');
+    return res.status(401).json({ error: 'Unauthorized', reason: 'MISSING_AUTH_HEADER' });
+  }
+  const [scheme, token] = header.split(' ');
+  if (!/^Bearer$/i.test(scheme) || !token) {
+    logger.warn('[auth] malformed Authorization header');
+    res.set('Content-Type', 'application/json');
+    return res.status(401).json({ error: 'Unauthorized', reason: 'MALFORMED_AUTH_HEADER' });
+  }
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    logger.error('[auth] JWT_SECRET not set');
+    res.set('Content-Type', 'application/json');
+    return res.status(500).json({ error: 'Server misconfigured', reason: 'MISSING_JWT_SECRET' });
+  }
   try {
-    const header = req.headers.authorization || '';
-    const [scheme, token] = header.split(' ');
-    if (scheme !== 'Bearer' || !token) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    const payload = jwt.verify(token, secret);
+    // Normalize fields: support tokens signed with { sub, username } (no email)
+    const id = payload.id || payload.sub || null;
+    const email = payload.email || null;
+    const username = payload.username || null;
+    if (!id) {
+      logger.warn('[auth] token verified but missing id/sub');
+      res.set('Content-Type', 'application/json');
+      return res.status(401).json({ error: 'Unauthorized', reason: 'INVALID_TOKEN_PAYLOAD' });
     }
-
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      const err = new Error('JWT_SECRET not configured');
-      err.status = 500;
-      throw err;
-    }
-
-    const payload = jwt.verify(token, secret); // throws on invalid/expired
-    // attach to req for downstream handlers
-    req.auth = { userId: payload.sub, username: payload.username };
+    req.user = { id, email, username };
     return next();
   } catch (err) {
-    if (err.name === 'TokenExpiredError' || err.name === 'JsonWebTokenError') {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    return next(err);
+    logger.warn(`[auth] token verify failed: ${err?.name || 'Error'} - ${err?.message || ''}`.trim());
+    res.set('Content-Type', 'application/json');
+    return res.status(401).json({ error: 'Unauthorized', reason: 'INVALID_TOKEN' });
   }
 }
 
